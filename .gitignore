@@ -1,0 +1,5 @@
+# Cache objects
+packer_cache/
+
+#General
+.DS_Store

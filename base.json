@@ -1,0 +1,67 @@
+{
+  "variables": {
+    "account_id": "{{env `AWS_ACCOUNT_ID`}}",
+    "aws_access_key": "",
+    "aws_secret_key": "",
+    "x509_cert_path": "{{env `X509_CERT`}}",
+    "x509_key_path": "{{env `X509_KEY`}}",
+    "git_key": "{{env `GIT_SSH_KEY`}}",
+    "local_chef_dir": "{{env `CHEF_REPO_DIR`}}",
+    "chef_dir": "/tmp/packer-chef-client",
+    "conf_dir": "{{env `CONFIG_DIR`}}",
+    "chef_env": "dev"
+  },
+
+  "builders": [
+    { "type": "amazon-instance",
+      "name": "base {{timestamp}}",
+      "access_key": "{{user `aws_access_key`}}",
+      "secret_key": "{{user `aws_secret_key`}}",
+      "region": "us-east-1",
+      "source_ami": "ami-88bfe0e0",
+      "instance_type": "c3.large",
+      "ssh_username": "ubuntu",
+      "ami_name": "ts-base_{{timestamp}}",
+      "ami_regions": ["us-east-1"],
+      "security_group_id": "sg-3a15d45e",
+      "subnet_id": "subnet-1f389946",
+      "ami_virtualization_type": "hvm",
+      "enhanced_networking": true,
+
+      "bundle_vol_command": "sudo -n bash -c 'export EC2_HOME=/var/tmp/ec2 ; export JAVA_HOME=/var/tmp/java/jdk1.8.0_25 ; export PATH=$PATH:/sbin:/usr/sbin:/usr/local/sbin:$EC2_HOME/bin:$JAVA_HOME/bin ; ec2-bundle-vol -P mbr -k {{.KeyPath}} -u {{.AccountId}} -c {{.CertPath}} -r x86_64 -e /var/tmp/*,/tmp/* -p {{.Prefix}} --no-filter --no-filter --batch'",
+      "bundle_upload_command": "sudo -n bash -c 'export EC2_HOME=/var/tmp/ec2 ; export JAVA_HOME=/var/tmp/java/jdk1.8.0_25 ; export PATH=$PATH:/sbin:/usr/sbin:/usr/local/sbin:$EC2_HOME/bin:$JAVA_HOME/bin ; ec2-upload-bundle -b {{.BucketName}} -m {{.ManifestPath}} -a {{.AccessKey}} -s {{.SecretKey}} -d {{.BundleDirectory}} --batch --retry'",
+
+      "account_id": "{{user `account_id`}}",
+      "s3_bucket": "{{user `s3_bucket`}}",
+      "x509_cert_path": "{{user `x509_cert_path`}}",
+      "x509_key_path": "{{user `x509_key_path`}}"
+    }
+  ],
+
+  "provisioners" : [
+
+    { "type": "shell", "script": "scripts/bootstrap.sh" },
+    { "type": "file", "source": "{{user `local_chef_dir`}}/cookbooks", "destination": "{{user `chef_dir`}}" },
+    { "type": "file", "source": "{{user `local_chef_dir`}}/roles", "destination": "{{user `chef_dir`}}" },
+    { "type": "file", "source": "{{user `local_chef_dir`}}/data_bags", "destination": "{{user `chef_dir`}}" },
+    { "type": "file", "source": "{{user `local_chef_dir`}}/environments", "destination": "{{user `chef_dir`}}" },
+    { "type": "file", "source": "{{user `conf_dir`}}/.chef/keys/encrypted_data_bag_secret.pem", "destination": "/etc/chef/encrypted_data_bag_secret" },
+
+    {
+      "type": "chef-client",
+      "chef_environment": "{{user `chef_env`}}",
+      "server_url": "http://localhost:8889",
+      "config_template"   : "templates/client.rb.template",
+      "skip_clean_node": true,
+      "skip_clean_client": true,
+      "run_list": [ "role[foo]" ]
+    },
+    { "type": "shell",
+      "script": "scripts/ami-tools.sh",
+      "execute_command": "{{ .Vars }} sudo -E /bin/bash '{{ .Path }}'"
+    },
+    { "type": "shell",
+      "script": "scripts/cleanup.sh"
+    }
+  ]
+}
